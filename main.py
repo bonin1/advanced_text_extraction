@@ -690,45 +690,152 @@ class DataExtractor:
                 return page_num, ""
     
     def _process_image_for_ocr(self, image, page_num):
-        """Process an image for optimal OCR results with advanced preprocessing."""
+        """Process an image for optimal OCR results with comprehensive preprocessing."""
         try:
             if self.preprocess and self.cv2_available:
                 # Convert PIL image to OpenCV format
                 img = np.array(image)
                 img = img[:, :, ::-1].copy()  # RGB to BGR
                 
-                # Apply a series of preprocessing steps
-                # 1. Convert to grayscale
+                logger.info(f"Preprocessing image for OCR on page {page_num+1}")
+                
+                # 1. Convert to Grayscale (Removes unnecessary color noise)
+                logger.debug("Converting image to grayscale")
                 gray = self.cv2.cvtColor(img, self.cv2.COLOR_BGR2GRAY)
                 
-                # 2. Apply adaptive thresholding
+                # 2. Resize Image (Standardizes resolution for better OCR accuracy)
+                logger.debug("Standardizing image resolution")
+                # Calculate target dimensions maintaining aspect ratio
+                height, width = gray.shape
+                target_dpi = min(600, self.dpi)  # Cap at 600 DPI to avoid excessive processing
+                
+                # Resize if image is too small or too large
+                if height < 1000 or width < 1000 or height > 3500 or width > 3500:
+                    # Calculate scaling factor
+                    scale_factor = 1.0
+                    if height < 1000 or width < 1000:
+                        scale_factor = max(1000 / height, 1000 / width)
+                    elif height > 3500 or width > 3500:
+                        scale_factor = min(3500 / height, 3500 / width)
+                    
+                    new_width = int(width * scale_factor)
+                    new_height = int(height * scale_factor)
+                    resized = self.cv2.resize(gray, (new_width, new_height), 
+                                              interpolation=self.cv2.INTER_CUBIC)
+                else:
+                    resized = gray
+                
+                # 3. Denoising & Smoothing (Reduces unwanted noise)
+                logger.debug("Applying noise reduction")
+                # Apply Non-Local Means Denoising for better noise removal
+                denoised = self.cv2.fastNlMeansDenoising(resized, None, 10, 7, 21)
+                
+                # Light Gaussian blur to further reduce noise while preserving edges
+                if min(denoised.shape) > 300:  # Only apply if image is large enough
+                    denoised = self.cv2.GaussianBlur(denoised, (3, 3), 0)
+                
+                # 4. Perspective Correction (Fixes skewed images by detecting paper edges)
+                # Only apply if document appears to have clear edges and is skewed
+                try:
+                    logger.debug("Checking for skewed document")
+                    # Get a binary version of the image for edge detection
+                    _, binary_for_edges = self.cv2.threshold(denoised, 0, 255, 
+                                                           self.cv2.THRESH_BINARY + self.cv2.THRESH_OTSU)
+                    
+                    # Use edge detection to find document borders
+                    edges = self.cv2.Canny(binary_for_edges, 50, 150, apertureSize=3)
+                    
+                    # Find contours
+                    contours, _ = self.cv2.findContours(edges, self.cv2.RETR_EXTERNAL, self.cv2.CHAIN_APPROX_SIMPLE)
+                    
+                    # If a large rectangle contour is found, it might be the page
+                    if contours:
+                        largest_contour = max(contours, key=self.cv2.contourArea)
+                        contour_area = self.cv2.contourArea(largest_contour)
+                        image_area = denoised.shape[0] * denoised.shape[1]
+                        
+                        # Only proceed if the contour is large enough to be a page (at least 50% of image)
+                        if contour_area > 0.5 * image_area:
+                            # Approximate the contour to get straight lines
+                            epsilon = 0.02 * self.cv2.arcLength(largest_contour, True)
+                            approx = self.cv2.approxPolyDP(largest_contour, epsilon, True)
+                            
+                            # If we have a quadrilateral, proceed with perspective correction
+                            if len(approx) == 4:
+                                logger.debug("Applying perspective correction")
+                                # Order the points in a consistent manner
+                                pts = np.array([point[0] for point in approx], dtype=np.float32)
+                                rect = np.zeros((4, 2), dtype=np.float32)
+                                
+                                # Order: top-left, top-right, bottom-right, bottom-left
+                                s = pts.sum(axis=1)
+                                rect[0] = pts[np.argmin(s)]  # Top-left
+                                rect[2] = pts[np.argmax(s)]  # Bottom-right
+                                
+                                diff = np.diff(pts, axis=1)
+                                rect[1] = pts[np.argmin(diff)]  # Top-right
+                                rect[3] = pts[np.argmax(diff)]  # Bottom-left
+                                
+                                # Calculate destination dimensions for the warped image
+                                width_a = np.sqrt(((rect[2][0] - rect[3][0]) ** 2) + ((rect[2][1] - rect[3][1]) ** 2))
+                                width_b = np.sqrt(((rect[1][0] - rect[0][0]) ** 2) + ((rect[1][1] - rect[0][1]) ** 2))
+                                height_a = np.sqrt(((rect[1][0] - rect[2][0]) ** 2) + ((rect[1][1] - rect[2][1]) ** 2))
+                                height_b = np.sqrt(((rect[0][0] - rect[3][0]) ** 2) + ((rect[0][1] - rect[3][1]) ** 2))
+                                
+                                max_width = max(int(width_a), int(width_b))
+                                max_height = max(int(height_a), int(height_b))
+                                
+                                # Destination points
+                                dst = np.array([
+                                    [0, 0],
+                                    [max_width - 1, 0],
+                                    [max_width - 1, max_height - 1],
+                                    [0, max_height - 1]
+                                ], dtype=np.float32)
+                                
+                                # Apply perspective transformation
+                                M = self.cv2.getPerspectiveTransform(rect, dst)
+                                warp = self.cv2.warpPerspective(denoised, M, (max_width, max_height))
+                                denoised = warp
+                except Exception as e:
+                    logger.warning(f"Perspective correction failed: {e}. Continuing with original image.")
+                
+                # 5. Contrast & Brightness Adjustment (Ensures text is clearly visible)
+                logger.debug("Adjusting contrast and brightness")
+                # Apply CLAHE (Contrast Limited Adaptive Histogram Equalization)
+                clahe = self.cv2.createCLAHE(clipLimit=2.0, tileGridSize=(8, 8))
+                enhanced = clahe.apply(denoised)
+                
+                # 6. Binarization (Thresholding to convert text to black & background to white)
+                logger.debug("Applying adaptive binarization")
+                # Adaptive thresholding works better for uneven lighting
                 binary = self.cv2.adaptiveThreshold(
-                    gray, 255, self.cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
+                    enhanced, 255, self.cv2.ADAPTIVE_THRESH_GAUSSIAN_C, 
                     self.cv2.THRESH_BINARY, 11, 2
                 )
                 
-                # 3. Apply morphological operations to clean up noise
+                # 7. Apply morphological operations to clean up noise and connect broken text
+                logger.debug("Performing morphological cleanup")
+                # Define a small kernel
                 kernel = np.ones((1, 1), np.uint8)
-                opening = self.cv2.morphologyEx(binary, self.cv2.MORPH_OPEN, kernel)
                 
-                # 4. Apply bilateral filter to preserve edges while removing noise
-                denoised = self.cv2.bilateralFilter(opening, 9, 75, 75)
+                # Close small holes inside foreground objects
+                processed = self.cv2.morphologyEx(binary, self.cv2.MORPH_CLOSE, kernel)
                 
                 # Convert back to PIL image for Tesseract
-                processed_image = self.Image.fromarray(denoised)
+                processed_image = self.Image.fromarray(processed)
                 
                 # Apply additional PIL-based enhancements
-                processed_image = self.ImageOps.autocontrast(processed_image)
                 enhancer = self.ImageEnhance.Contrast(processed_image)
-                processed_image = enhancer.enhance(2.0)
+                processed_image = enhancer.enhance(1.5)  # Slightly enhance contrast
                 
-                # Resize image for better OCR if it's too small
-                width, height = processed_image.size
-                if width < 1000 or height < 1000:
-                    scale_factor = max(1000 / width, 1000 / height)
-                    new_width = int(width * scale_factor)
-                    new_height = int(height * scale_factor)
-                    processed_image = processed_image.resize((new_width, new_height), self.Image.LANCZOS)
+                # Save the preprocessed image for debugging if needed
+                if os.environ.get('SAVE_DEBUG_IMAGES', '0') == '1':
+                    debug_dir = os.path.join(self.output_dir, 'debug_images')
+                    os.makedirs(debug_dir, exist_ok=True)
+                    debug_path = os.path.join(debug_dir, f'preprocessed_page_{page_num+1}.png')
+                    processed_image.save(debug_path)
+                    logger.debug(f"Saved debug image to {debug_path}")
                 
                 # Apply OCR with advanced configuration
                 if self.ocr_mode == "deep":
@@ -785,6 +892,7 @@ class DataExtractor:
                 return page_num, ocr_result
             else:
                 # Basic OCR without preprocessing
+                logger.info(f"Skipping image preprocessing for page {page_num+1} (disabled or OpenCV not available)")
                 lang_str = "+".join(self.ocr_lang)
                 text = self.pytesseract.image_to_string(image, lang=lang_str, config=self.ocr_config)
                 return page_num, text
