@@ -1,17 +1,63 @@
-PyPDF2==3.0.1
-pandas==2.0.3
-openpyxl==3.1.2
-pytesseract==0.3.10
-pdf2image==1.16.3
-python-docx==0.8.11
-Pillow==10.0.0
-tabula-py==2.7.0
-Flask==2.3.2
-Werkzeug==2.3.6
-pdfplumber==0.10.2
-pikepdf==8.7.1
-opencv-python==4.8.0.76
-camelot-py[cv]==0.11.0
-nltk==3.8.1
-spacy==3.6.1
-numpy==1.24.3
+# Core dependencies
+opencv-python>=4.8.0
+Pillow>=10.0.0
+pytesseract>=0.3.10
+numpy>=1.24.0
+requests>=2.31.0
+
+# Advanced OCR engines
+easyocr>=1.7.0
+paddleocr>=2.7.0
+
+# Document processing
+PyPDF2>=3.0.1
+pdfplumber>=0.9.0
+PyMuPDF>=1.23.0
+python-docx>=0.8.11
+openpyxl>=3.1.2
+python-pptx>=0.6.21
+xlrd>=2.0.1
+
+# Web scraping
+beautifulsoup4>=4.12.0
+selenium>=4.15.0
+lxml>=4.9.3
+
+# Image processing and enhancement
+scikit-image>=0.21.0
+scipy>=1.11.0
+
+# Language and text processing
+langdetect>=1.0.9
+googletrans==3.1.0a0
+textstat>=0.7.3
+spacy>=3.7.0
+
+# GUI framework
+customtkinter>=5.2.0
+tkinterdnd2>=0.3.0
+
+# CLI enhancements
+rich>=13.5.0
+click>=8.1.7
+tqdm>=4.66.0
+
+# Utilities
+loguru>=0.7.0
+python-magic>=0.4.27
+chardet>=3.0.0
+python-dateutil>=2.8.2
+
+# Configuration and data
+pyyaml>=6.0.1
+toml>=0.10.2
+json5>=0.9.14
+
+# Testing and quality
+pytest>=7.4.0
+black>=23.7.0
+flake8>=6.0.0
+
+# Performance monitoring
+psutil>=5.9.5
+memory-profiler>=0.61.0

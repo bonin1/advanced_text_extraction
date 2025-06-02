@@ -1,3 +1,5 @@
 /uploads
 /extracted_data
 /__pycache__
+/test*
+/extraction_history.db
