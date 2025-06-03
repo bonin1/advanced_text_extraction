@@ -173,8 +173,7 @@ class SettingsDialog(ctk.CTkToplevel):
         self.workers_var = ctk.IntVar(value=self.config.get('batch', {}).get('max_workers', 4))
         workers_entry = ctk.CTkEntry(workers_frame, textvariable=self.workers_var, width=100)
         workers_entry.pack(side="right", padx=10, pady=10)
-        
-        # Database Settings
+          # Database Settings
         db_frame = ctk.CTkFrame(self.main_frame)
         db_frame.pack(fill="x", pady=(0, 20))
         
@@ -188,6 +187,63 @@ class SettingsDialog(ctk.CTkToplevel):
         self.db_path_var = ctk.StringVar(value=self.config.get('database', {}).get('path', 'extraction_history.db'))
         path_entry = ctk.CTkEntry(path_frame, textvariable=self.db_path_var)
         path_entry.pack(fill="x", padx=10, pady=(0, 10))
+        
+        # Save Settings
+        save_frame = ctk.CTkFrame(self.main_frame)
+        save_frame.pack(fill="x", pady=(0, 20))
+        
+        ctk.CTkLabel(save_frame, text="Save & Auto-Save Settings", font=ctk.CTkFont(size=16, weight="bold")).pack(pady=(10, 5))
+        
+        # Auto-save enabled
+        autosave_frame = ctk.CTkFrame(save_frame)
+        autosave_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(autosave_frame, text="Enable Auto-Save:").pack(side="left", padx=10)
+        self.autosave_var = ctk.BooleanVar(value=self.config.get('save', {}).get('auto_save_enabled', False))
+        autosave_switch = ctk.CTkSwitch(autosave_frame, variable=self.autosave_var)
+        autosave_switch.pack(side="right", padx=10, pady=10)
+        
+        # Default save directory
+        save_dir_frame = ctk.CTkFrame(save_frame)
+        save_dir_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(save_dir_frame, text="Default Save Directory:").pack(anchor="w", padx=10, pady=(10, 5))
+        self.save_dir_var = ctk.StringVar(value=self.config.get('save', {}).get('default_directory', './output'))
+        
+        save_dir_entry_frame = ctk.CTkFrame(save_dir_frame, fg_color="transparent")
+        save_dir_entry_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        save_dir_entry = ctk.CTkEntry(save_dir_entry_frame, textvariable=self.save_dir_var)
+        save_dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ctk.CTkButton(
+            save_dir_entry_frame,
+            text="Browse",
+            command=self.browse_save_directory,
+            width=80
+        ).pack(side="right")
+        
+        # Save format preference
+        format_frame = ctk.CTkFrame(save_frame)
+        format_frame.pack(fill="x", padx=10, pady=5)
+        
+        ctk.CTkLabel(format_frame, text="Default Save Format:").pack(side="left", padx=10)
+        self.save_format_var = ctk.StringVar(value=self.config.get('save', {}).get('default_format', 'txt'))
+        format_menu = ctk.CTkOptionMenu(
+            format_frame,
+            variable=self.save_format_var,
+            values=["txt", "json", "csv"]
+        )
+        format_menu.pack(side="right", padx=10, pady=10)
+        
+        # Auto-save after extraction
+        auto_after_frame = ctk.CTkFrame(save_frame)
+        auto_after_frame.pack(fill="x", padx=10, pady=(5, 10))
+        
+        ctk.CTkLabel(auto_after_frame, text="Auto-save after extraction:").pack(side="left", padx=10)
+        self.auto_after_var = ctk.BooleanVar(value=self.config.get('save', {}).get('auto_save_after_extraction', False))
+        auto_after_switch = ctk.CTkSwitch(auto_after_frame, variable=self.auto_after_var)
+        auto_after_switch.pack(side="right", padx=10, pady=10)
         
         # Buttons
         button_frame = ctk.CTkFrame(self)
@@ -211,6 +267,14 @@ class SettingsDialog(ctk.CTkToplevel):
             command=self.reset_defaults
         ).pack(side="left")
     
+    def browse_save_directory(self):
+        """Browse for save directory"""
+        directory = filedialog.askdirectory(
+            title="Select Default Save Directory",
+            initialdir=self.save_dir_var.get()
+        )
+        if directory:
+            self.save_dir_var.set(directory)
     def save_settings(self):
         """Save current settings"""
         self.result = {
@@ -224,10 +288,15 @@ class SettingsDialog(ctk.CTkToplevel):
             },
             'database': {
                 'path': self.db_path_var.get()
+            },
+            'save': {
+                'auto_save_enabled': self.autosave_var.get(),
+                'default_directory': self.save_dir_var.get(),
+                'default_format': self.save_format_var.get(),
+                'auto_save_after_extraction': self.auto_after_var.get()
             }
         }
         self.destroy()
-    
     def reset_defaults(self):
         """Reset to default settings"""
         self.engine_var.set('auto')
@@ -235,6 +304,253 @@ class SettingsDialog(ctk.CTkToplevel):
         self.confidence_var.set(0.5)
         self.workers_var.set(4)
         self.db_path_var.set('extraction_history.db')
+        self.autosave_var.set(False)
+        self.save_dir_var.set('./output')
+        self.save_format_var.set('txt')
+        self.auto_after_var.set(False)
+
+
+class SaveDialog(ctk.CTkToplevel):
+    """Dialog for advanced save options with format selection"""
+    
+    def __init__(self, parent, results: List[ExtractionResult], save_settings: dict):
+        super().__init__(parent)
+        
+        self.title("Save Results - Advanced Options")
+        self.geometry("550x400")
+        self.transient(parent)
+        self.grab_set()
+        
+        # Center the dialog
+        self.update_idletasks()
+        x = (self.winfo_screenwidth() // 2) - (550 // 2)
+        y = (self.winfo_screenheight() // 2) - (400 // 2)
+        self.geometry(f"550x400+{x}+{y}")
+        
+        self.results = results
+        self.save_settings = save_settings
+        self.saved_files = []
+        
+        self.create_widgets()
+    
+    def create_widgets(self):
+        """Create save dialog widgets"""
+        # Main frame
+        main_frame = ctk.CTkFrame(self)
+        main_frame.pack(fill="both", expand=True, padx=20, pady=20)
+        
+        # Title
+        title_label = ctk.CTkLabel(
+            main_frame,
+            text="💾 Advanced Save Options",
+            font=ctk.CTkFont(size=18, weight="bold")
+        )
+        title_label.pack(pady=(10, 20))
+        
+        # Info
+        info_label = ctk.CTkLabel(
+            main_frame,
+            text=f"Save {len(self.results)} extraction results in multiple formats",
+            font=ctk.CTkFont(size=12)
+        )
+        info_label.pack(pady=(0, 20))
+        
+        # Save directory selection
+        dir_frame = ctk.CTkFrame(main_frame)
+        dir_frame.pack(fill="x", padx=10, pady=(0, 15))
+        
+        ctk.CTkLabel(dir_frame, text="Save Directory:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        dir_entry_frame = ctk.CTkFrame(dir_frame, fg_color="transparent")
+        dir_entry_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        self.dir_var = ctk.StringVar(value=self.save_settings.get('default_directory', './output'))
+        dir_entry = ctk.CTkEntry(dir_entry_frame, textvariable=self.dir_var)
+        dir_entry.pack(side="left", fill="x", expand=True, padx=(0, 5))
+        
+        ctk.CTkButton(
+            dir_entry_frame,
+            text="Browse",
+            command=self.browse_directory,
+            width=80
+        ).pack(side="right")
+        
+        # Format selection
+        format_frame = ctk.CTkFrame(main_frame)
+        format_frame.pack(fill="x", padx=10, pady=(0, 15))
+        
+        ctk.CTkLabel(format_frame, text="Select Formats to Save:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Format checkboxes
+        checkbox_frame = ctk.CTkFrame(format_frame, fg_color="transparent")
+        checkbox_frame.pack(fill="x", padx=10, pady=(0, 10))
+        
+        self.format_vars = {}
+        default_format = self.save_settings.get('default_format', 'txt')
+        
+        formats = [
+            ('txt', '📄 Text File (.txt)', default_format == 'txt'),
+            ('json', '🔧 JSON File (.json)', default_format == 'json'),
+            ('csv', '📊 CSV File (.csv)', default_format == 'csv')
+        ]
+        
+        for fmt, label, default in formats:
+            var = ctk.BooleanVar(value=default)
+            self.format_vars[fmt] = var
+            
+            checkbox = ctk.CTkCheckBox(
+                checkbox_frame,
+                text=label,
+                variable=var,
+                font=ctk.CTkFont(size=12)
+            )
+            checkbox.pack(anchor="w", padx=10, pady=2)
+        
+        # Save options
+        options_frame = ctk.CTkFrame(main_frame)
+        options_frame.pack(fill="x", padx=10, pady=(0, 15))
+        
+        ctk.CTkLabel(options_frame, text="Save Options:", font=ctk.CTkFont(weight="bold")).pack(anchor="w", padx=10, pady=(10, 5))
+        
+        # Individual files option
+        self.individual_var = ctk.BooleanVar(value=True)
+        individual_checkbox = ctk.CTkCheckBox(
+            options_frame,
+            text="Save individual files (one per source file)",
+            variable=self.individual_var,
+            font=ctk.CTkFont(size=12)
+        )
+        individual_checkbox.pack(anchor="w", padx=10, pady=2)
+        
+        # Combined file option
+        self.combined_var = ctk.BooleanVar(value=True)
+        combined_checkbox = ctk.CTkCheckBox(
+            options_frame,
+            text="Save combined file (all results together)",
+            variable=self.combined_var,
+            font=ctk.CTkFont(size=12)
+        )
+        combined_checkbox.pack(anchor="w", padx=10, pady=(2, 10))
+        
+        # Buttons
+        button_frame = ctk.CTkFrame(main_frame, fg_color="transparent")
+        button_frame.pack(fill="x", padx=10, pady=(10, 0))
+        
+        ctk.CTkButton(
+            button_frame,
+            text="Cancel",
+            command=self.destroy,
+            width=100
+        ).pack(side="right", padx=(10, 0))
+        
+        ctk.CTkButton(
+            button_frame,
+            text="Save All",
+            command=self.save_files,
+            width=100,
+            fg_color="#1f8b4c",
+            hover_color="#2d7d32"
+        ).pack(side="right")
+    
+    def browse_directory(self):
+        """Browse for save directory"""
+        directory = filedialog.askdirectory(
+            title="Select Save Directory",
+            initialdir=self.dir_var.get()
+        )
+        if directory:
+            self.dir_var.set(directory)
+    
+    def save_files(self):
+        """Save files with selected options"""
+        # Validate selections
+        selected_formats = [fmt for fmt, var in self.format_vars.items() if var.get()]
+        if not selected_formats:
+            messagebox.showwarning("No Format Selected", "Please select at least one format to save.")
+            return
+        
+        if not (self.individual_var.get() or self.combined_var.get()):
+            messagebox.showwarning("No Save Option Selected", "Please select at least one save option (individual or combined).")
+            return
+        
+        try:
+            save_dir = self.dir_var.get()
+            os.makedirs(save_dir, exist_ok=True)
+            
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            
+            for format_type in selected_formats:
+                if self.individual_var.get():
+                    # Save individual files
+                    individual_dir = os.path.join(save_dir, f"individual_{format_type}")
+                    os.makedirs(individual_dir, exist_ok=True)
+                    
+                    for i, result in enumerate(self.results):
+                        source_name = Path(result.source_file).stem
+                        filename = f"{source_name}_extracted_{timestamp}.{format_type}"
+                        filepath = os.path.join(individual_dir, filename)
+                        
+                        # Save single result
+                        self._save_single_result(result, filepath, format_type)
+                        self.saved_files.append(filepath)
+                
+                if self.combined_var.get():
+                    # Save combined file
+                    combined_filename = f"combined_results_{timestamp}.{format_type}"
+                    combined_filepath = os.path.join(save_dir, combined_filename)
+                    
+                    # Use extractor's export method for combined results
+                    from text_extractor import AdvancedTextExtractor
+                    extractor = AdvancedTextExtractor()
+                    extractor.export_results(self.results, combined_filepath, format_type)
+                    self.saved_files.append(combined_filepath)
+            
+            self.destroy()
+            
+        except Exception as e:
+            messagebox.showerror("Save Failed", f"Failed to save files:\n{str(e)}")
+    
+    def _save_single_result(self, result: ExtractionResult, filepath: str, format_type: str):
+        """Save a single result to file"""
+        if format_type == 'json':
+            output_data = {
+                'source_file': result.source_file,
+                'text': result.text,
+                'confidence': result.confidence,
+                'language': result.language,
+                'extraction_method': result.extraction_method,
+                'processing_time': result.processing_time,
+                'timestamp': result.timestamp.isoformat(),
+                'metadata': result.metadata
+            }
+            
+            with open(filepath, 'w', encoding='utf-8') as f:
+                json.dump(output_data, f, indent=2, ensure_ascii=False)
+        
+        elif format_type == 'csv':
+            import csv
+            with open(filepath, 'w', newline='', encoding='utf-8') as f:
+                writer = csv.writer(f)
+                writer.writerow(['Source File', 'Text', 'Confidence', 'Language', 'Method', 'Processing Time', 'Timestamp'])
+                writer.writerow([
+                    result.source_file,
+                    result.text.replace('\n', ' '),
+                    result.confidence,
+                    result.language,
+                    result.extraction_method,
+                    result.processing_time,
+                    result.timestamp.isoformat()
+                ])
+        
+        else:  # txt format
+            with open(filepath, 'w', encoding='utf-8') as f:
+                f.write(f"Source: {result.source_file}\n")
+                f.write(f"Language: {result.language}\n")
+                f.write(f"Confidence: {result.confidence:.2f}\n")
+                f.write(f"Method: {result.extraction_method}\n")
+                f.write(f"Timestamp: {result.timestamp.strftime('%Y-%m-%d %H:%M:%S')}\n")
+                f.write("-" * 50 + "\n")
+                f.write(result.text)
 
 
 class TextExtractionGUI:
@@ -249,10 +565,13 @@ class TextExtractionGUI:
         self.root = TkinterDnD.Tk()
         self.root.title("Advanced Text Extraction Software")
         self.root.geometry("1200x800")
-        
-        # Initialize extractor
+          # Initialize extractor
         self.extractor = AdvancedTextExtractor()
         self.current_results = []
+        
+        # Configuration and save settings
+        self.app_config = self.load_app_config()
+        self.save_settings = self.app_config.get('save', {})
         
         # File handling
         self.selected_files = []
@@ -474,30 +793,49 @@ class TextExtractionGUI:
             text="📄 Extraction Results",
             font=ctk.CTkFont(size=16, weight="bold")
         ).pack(side="left", padx=10, pady=10)
-        
-        # Export buttons
+          # Export and Save buttons
         export_frame = ctk.CTkFrame(results_header, fg_color="transparent")
         export_frame.pack(side="right", padx=10)
         
+        # Save buttons
         ctk.CTkButton(
             export_frame,
-            text="💾 Export JSON",
-            command=lambda: self.export_results('json'),
-            width=120
+            text="💾 Save All",
+            command=self.save_all_results,
+            width=100,
+            fg_color="#1f8b4c",
+            hover_color="#2d7d32"
         ).pack(side="right", padx=(5, 0))
         
         ctk.CTkButton(
             export_frame,
-            text="📊 Export CSV",
-            command=lambda: self.export_results('csv'),
-            width=120
+            text="💾 Quick Save",
+            command=self.quick_save_results,
+            width=100,
+            fg_color="#1976d2",
+            hover_color="#1565c0"
+        ).pack(side="right", padx=5)
+        
+        # Export buttons
+        ctk.CTkButton(
+            export_frame,
+            text="📤 Export JSON",
+            command=lambda: self.export_results('json'),
+            width=110
         ).pack(side="right", padx=5)
         
         ctk.CTkButton(
             export_frame,
-            text="📝 Export TXT",
+            text="📤 Export CSV",
+            command=lambda: self.export_results('csv'),
+            width=110
+        ).pack(side="right", padx=5)
+        
+        ctk.CTkButton(
+            export_frame,
+            text="📤 Export TXT",
             command=lambda: self.export_results('txt'),
-            width=120
+            width=110
         ).pack(side="right")
         
         # Results notebook (tabs)
@@ -701,8 +1039,7 @@ class TextExtractionGUI:
         except Exception as e:
             messagebox.showerror("Error", f"Processing failed: {str(e)}")
         
-        finally:
-            # Re-enable process button
+        finally:            # Re-enable process button
             self.root.after(0, lambda: self.process_button.configure(
                 state="normal", 
                 text="🚀 Start Extraction"
@@ -724,6 +1061,9 @@ class TextExtractionGUI:
         
         # Switch to preview tab
         self.results_notebook.set("Preview")
+        
+        # Auto-save if enabled
+        self.auto_save_after_extraction()
         
         self.update_status(f"Extraction completed - {len(self.current_results)} files processed")
     
@@ -876,8 +1216,7 @@ class TextExtractionGUI:
         if not self.current_results:
             messagebox.showwarning("No Results", "No results to export.")
             return
-        
-        # File dialog
+          # File dialog
         file_types = {
             'json': [("JSON files", "*.json")],
             'csv': [("CSV files", "*.csv")],
@@ -900,12 +1239,28 @@ class TextExtractionGUI:
     
     def open_settings(self):
         """Open settings dialog"""
-        settings_dialog = SettingsDialog(self.root, self.extractor.config)
+        # Merge extractor config with app config for the dialog
+        merged_config = self.extractor.config.copy()
+        merged_config.update(self.app_config)
+        
+        settings_dialog = SettingsDialog(self.root, merged_config)
         self.root.wait_window(settings_dialog)
         
         if settings_dialog.result:
             # Update extractor configuration
-            self.extractor.config.update(settings_dialog.result)
+            extractor_config = {
+                'ocr': settings_dialog.result.get('ocr', {}),
+                'batch': settings_dialog.result.get('batch', {}),
+                'database': settings_dialog.result.get('database', {})
+            }
+            self.extractor.config.update(extractor_config)
+            
+            # Update app configuration
+            if 'save' in settings_dialog.result:
+                self.app_config['save'] = settings_dialog.result['save']
+                self.save_settings = self.app_config['save']
+                self.save_app_config()
+            
             self.update_status("Settings updated")
     
     def show_history(self):
@@ -1000,6 +1355,105 @@ For more information, visit the project repository.
         """
         
         messagebox.showinfo("Help", help_text)
+    
+    def load_app_config(self):
+        """Load application configuration from file"""
+        config_file = "app_config.json"
+        default_config = {
+            'save': {
+                'auto_save_enabled': False,
+                'default_directory': './output',
+                'default_format': 'txt',
+                'auto_save_after_extraction': False
+            }
+        }
+        
+        if os.path.exists(config_file):
+            try:
+                with open(config_file, 'r') as f:
+                    user_config = json.load(f)
+                default_config.update(user_config)
+            except Exception as e:
+                print(f"Error loading config: {e}")
+        
+        return default_config
+    
+    def save_app_config(self):
+        """Save application configuration to file"""
+        config_file = "app_config.json"
+        try:
+            with open(config_file, 'w') as f:
+                json.dump(self.app_config, f, indent=2)
+        except Exception as e:
+            print(f"Error saving config: {e}")
+    
+    def quick_save_results(self):
+        """Quick save results using default settings"""
+        if not self.current_results:
+            messagebox.showwarning("No Results", "No results to save.")
+            return
+        
+        try:
+            # Create default save directory if it doesn't exist
+            save_dir = self.save_settings.get('default_directory', './output')
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            format_type = self.save_settings.get('default_format', 'txt')
+            filename = f"extraction_results_{timestamp}.{format_type}"
+            filepath = os.path.join(save_dir, filename)
+            
+            # Save the results
+            self.extractor.export_results(self.current_results, filepath, format_type)
+            
+            messagebox.showinfo("Save Successful", f"Results saved to:\n{filepath}")
+            self.update_status(f"Quick saved to {filename}")
+            
+        except Exception as e:
+            messagebox.showerror("Save Failed", f"Failed to save results:\n{str(e)}")
+    
+    def save_all_results(self):
+        """Save results with format selection dialog"""
+        if not self.current_results:
+            messagebox.showwarning("No Results", "No results to save.")
+            return
+        
+        # Show save dialog
+        save_dialog = SaveDialog(self.root, self.current_results, self.save_settings)
+        self.root.wait_window(save_dialog)
+        
+        if save_dialog.saved_files:
+            files_str = '\n'.join(save_dialog.saved_files)
+            messagebox.showinfo("Save Successful", f"Results saved to:\n{files_str}")
+            self.update_status(f"Saved {len(save_dialog.saved_files)} files")
+    
+    def auto_save_after_extraction(self):
+        """Auto-save results after extraction if enabled"""
+        if not self.save_settings.get('auto_save_after_extraction', False):
+            return
+        
+        if not self.current_results:
+            return
+        
+        try:
+            # Create auto-save directory
+            save_dir = os.path.join(self.save_settings.get('default_directory', './output'), 'auto_saves')
+            os.makedirs(save_dir, exist_ok=True)
+            
+            # Generate filename with timestamp
+            timestamp = datetime.now().strftime('%Y%m%d_%H%M%S')
+            format_type = self.save_settings.get('default_format', 'txt')
+            filename = f"auto_save_{timestamp}.{format_type}"
+            filepath = os.path.join(save_dir, filename)
+            
+            # Save the results
+            self.extractor.export_results(self.current_results, filepath, format_type)
+            
+            self.update_status(f"Auto-saved to {filename}")
+            
+        except Exception as e:
+            print(f"Auto-save failed: {e}")  # Don't show error dialog for auto-save
     
     def run(self):
         """Start the GUI application"""
