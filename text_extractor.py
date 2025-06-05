@@ -38,14 +38,16 @@ import pytesseract
 try:
     import easyocr
     EASYOCR_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, Exception) as e:
     EASYOCR_AVAILABLE = False
+    print(f"Warning: EasyOCR not available: {e}")
 
 try:
     from paddleocr import PaddleOCR
     PADDLEOCR_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, Exception) as e:
     PADDLEOCR_AVAILABLE = False
+    print(f"Warning: PaddleOCR not available: {e}")
 
 # Document processing
 import PyPDF2
@@ -53,8 +55,9 @@ import pdfplumber
 try:
     import fitz  # PyMuPDF
     PYMUPDF_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, Exception) as e:
     PYMUPDF_AVAILABLE = False
+    print(f"Warning: PyMuPDF not available: {e}")
 
 from docx import Document
 import openpyxl
@@ -64,8 +67,9 @@ from pptx import Presentation
 try:
     import xlrd
     XLRD_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, Exception) as e:
     XLRD_AVAILABLE = False
+    print(f"Warning: xlrd not available: {e}")
 
 # Web and text processing
 import requests
@@ -77,21 +81,24 @@ try:
     from selenium.webdriver.support.ui import WebDriverWait
     from selenium.webdriver.support import expected_conditions as EC
     SELENIUM_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, Exception) as e:
     SELENIUM_AVAILABLE = False
+    print(f"Warning: Selenium not available: {e}")
 
 # Language processing
 try:
     import langdetect
     LANGDETECT_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, Exception) as e:
     LANGDETECT_AVAILABLE = False
+    print(f"Warning: langdetect not available: {e}")
 
 try:
     from googletrans import Translator
     GOOGLETRANS_AVAILABLE = True
-except ImportError:
+except (ImportError, AttributeError, Exception) as e:
     GOOGLETRANS_AVAILABLE = False
+    print(f"Warning: googletrans not available: {e}")
 
 # Image processing (optional for advanced features)
 try:
